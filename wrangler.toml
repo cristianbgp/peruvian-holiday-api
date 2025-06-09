@@ -1,0 +1,4 @@
+name = "peruvian-holiday-api"
+main = "src/index.ts"
+minify = true
+compatibility_date = "2025-06-09"
