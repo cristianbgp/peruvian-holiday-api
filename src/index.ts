@@ -8,11 +8,25 @@ const app = new Hono();
 app.use("*", cors());
 
 app.get("/", (c) => {
-  return c.text(`peruvian-holiday-api by @cristianbgp\n\nGET /holidays\nGET /is-it-holiday`);
+  return c.text(
+    `peruvian-holiday-api by @cristianbgp\n\nGET /holidays\nGET /is-it-holiday (Query Parameter: public-sector: boolean)`
+  );
 });
 
 app.get("/holidays", async (c) => {
+  const includePublicSectorHolidays: boolean =
+    c.req.query("public-sector") === "true" || false;
   const holidays = await extractHolidaysFromURL("https://www.gob.pe/feriados");
+  if (!includePublicSectorHolidays) {
+    const filteredHolidays = holidays.filter(
+      (holiday) => !holiday.name.includes("sector público")
+    );
+    c.header(
+      "Cache-Control",
+      "public, s-maxage=120, stale-while-revalidate=60"
+    );
+    return c.json(filteredHolidays);
+  }
   c.header("Cache-Control", "public, s-maxage=120, stale-while-revalidate=60");
   return c.json(holidays);
 });
