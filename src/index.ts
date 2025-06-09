@@ -9,7 +9,7 @@ app.use("*", cors());
 
 app.get("/", (c) => {
   return c.text(
-    `peruvian-holiday-api by @cristianbgp\n\nGET /holidays\nGET /is-it-holiday (Query Parameter: public-sector: boolean)`
+    `peruvian-holiday-api by @cristianbgp\n\nGET /holidays (Query Parameter: public-sector: boolean)\nGET /is-it-holiday (Query Parameter: public-sector: boolean)`
   );
 });
 
@@ -32,15 +32,26 @@ app.get("/holidays", async (c) => {
 });
 
 app.get("/is-it-holiday", async (c) => {
+  const includePublicSectorHolidays: boolean =
+    c.req.query("public-sector") === "true" || false;
   const today = new Date();
   const formattedDate = formatDate(today);
   const holidays = await extractHolidaysFromURL("https://www.gob.pe/feriados");
-  const isHoliday = holidays.some((holiday) => {
+  if (!includePublicSectorHolidays) {
+    const filteredHolidays = holidays.filter(
+      (holiday) => !holiday.name.includes("sector público")
+    );
+    return c.json({ isHoliday: filteredHolidays.some((holiday) => {
+      const holidayDate = holiday.date;
+      const formattedHolidayDate = formatDate(holidayDate);
+      return formattedHolidayDate === formattedDate;
+    }) });
+  }
+  return c.json({ isHoliday: holidays.some((holiday) => {
     const holidayDate = holiday.date;
     const formattedHolidayDate = formatDate(holidayDate);
     return formattedHolidayDate === formattedDate;
-  });
-  return c.json({ isHoliday, date: formattedDate });
+  }) });
 });
 
 export default app;

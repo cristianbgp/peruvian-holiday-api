@@ -121,8 +121,30 @@ export async function extractHolidaysFromURL(url: string): Promise<Holiday[]> {
             }
           }
         },
-        element() {}, // Required to avoid TypeScript errors
-        comments() {}, // Required to avoid TypeScript errors
+        element(element) {
+          if (element.tagName === "div" && element.onEndTag) {
+            element.onEndTag(function () {
+              if (nextHoliday && nextHoliday.dateString && nextHoliday.name) {
+                try {
+                  // Parse the date string into a Date object
+                  const parsedDate = parseSpanishDate(nextHoliday.dateString);
+                  
+                  // Add the next holiday to the holidays array
+                  holidays.push({
+                    dateString: nextHoliday.dateString,
+                    name: nextHoliday.name.trim(),
+                    date: parsedDate
+                  });
+                  
+                  console.log(`Added next upcoming holiday: ${nextHoliday.name} on ${nextHoliday.dateString}`);
+                } catch (err) {
+                  console.error(`Failed to parse next holiday date: ${nextHoliday.dateString}`, err);
+                }
+              }
+            });
+          }
+        },
+        comments() {} // Required to avoid TypeScript errors
       })
       .on("li.holidays__list-item", {
         element(element) {
