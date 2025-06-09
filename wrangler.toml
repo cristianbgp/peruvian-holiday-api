@@ -1,4 +1,13 @@
 name = "peruvian-holiday-api"
 main = "src/index.ts"
-minify = true
-compatibility_date = "2025-06-09"
+compatibility_date = "2023-01-01"
+
+[build]
+command = "bun run build"
+
+[build.upload]
+format = "modules"
+
+[[routes]]
+pattern = "*"
+script = "src/index.ts"
