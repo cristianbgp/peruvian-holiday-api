@@ -4,6 +4,10 @@ interface Holiday {
   name: string;
 }
 
+interface TextChunk {
+  text: string;
+}
+
 /**
  * Parse a Spanish date string like "Miércoles 23 de julio" into a Date object
  * @param dateString The Spanish date string to parse
@@ -61,68 +65,154 @@ function parseSpanishDate(dateString: string): Date {
 
 export async function extractHolidaysFromURL(url: string): Promise<Holiday[]> {
   try {
-    const response = await fetch(url);
-    const html = await response.text();
-    const holidays: Holiday[] = [];
-    
-    // Extract the next holiday (special structure)
-    const nextHolidayDiv = html.match(/<div[^>]*class="[^"]*holidays__recent-holiday[^"]*"[^>]*>[\s\S]*?<\/div>/i);
-    if (nextHolidayDiv) {
-      const dateMatch = nextHolidayDiv[0].match(/<div[^>]*class="[^"]*holidays__recent-holiday-date[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
-      const nameMatch = nextHolidayDiv[0].match(/<div[^>]*class="[^"]*holidays__recent-holiday-name[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
-      
-      if (dateMatch && nameMatch) {
-        const dateString = dateMatch[1].replace(/<[^>]*>/g, "").trim();
-        const name = nameMatch[1].replace(/<[^>]*>/g, "").trim();
-        
-        if (dateString && name) {
-          const parsedDate = parseSpanishDate(dateString);
-          
-          // Add the next holiday as the first item
-          holidays.push({
-            dateString,
-            name,
-            date: parsedDate,
-          });
-        }
-      }
+    console.log(`Fetching holidays from ${url}`);
+
+    // Add headers to help with potential CORS issues
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+      },
+    });
+
+    if (!response.ok) {
+      console.error(
+        `Failed to fetch holidays: ${response.status} ${response.statusText}`
+      );
+      return [];
     }
 
-    // Simple regex-based parsing as a fallback that works everywhere
-    // Look for holiday list items
-    const holidayItems = html.match(/<li[^>]*class="[^"]*holidays__list-item[^"]*"[^>]*>[\s\S]*?<span[^>]*class="[^"]*holidays__list-item-name[^"]*"[^>]*>[\s\S]*?<\/span><\/li>/gi) || [];
-    
-    for (const item of holidayItems) {
-      // Extract all date spans from the current holiday item
-      const dateSpans = item.match(/<span[^>]*class="[^"]*holidays__list-item-date[^"]*"[^>]*>([\s\S]*?)<\/span>/gi) || [];
-      let dateString = '';
-      
-      // Combine all date spans into a single string
-      for (const span of dateSpans) {
-        const content = span.replace(/<[^>]*>/g, "").trim();
-        dateString += content + ' ';
-      }
-      // Remove trailing colon if present
-      dateString = dateString.trim().replace(/:\s*$/, "");
-      
-      // Extract the name
-      const nameMatch = item.match(/<span[^>]*class="[^"]*holidays__list-item-name[^"]*"[^>]*>([\s\S]*?)<\/span>/i);
-      const name = nameMatch ? nameMatch[1].replace(/<[^>]*>/g, "").trim() : "";
-      
-      if (dateString && name) {
-        const parsedDate = parseSpanishDate(dateString);
+    const holidays: Holiday[] = [];
+    let nextHoliday: Holiday | null = null;
+    let currentHoliday: Holiday | null = null;
 
-        holidays.push({
-          dateString,
-          name,
-          date: parsedDate,
-        });
-      }
+    // Process the next upcoming holiday (special structure)
+    const rewriter = new HTMLRewriter()
+      .on("div.holidays__recent-holiday", {
+        element(element) {
+          // Create a new holiday object for the next upcoming holiday
+          nextHoliday = { dateString: "", name: "", date: new Date() };
+        },
+        comments() {}, // Required to avoid TypeScript errors
+        text() {}, // Required to avoid TypeScript errors
+      })
+      .on("div.holidays__recent-holiday-date", {
+        text(text: TextChunk) {
+          if (nextHoliday && text.text.trim()) {
+            // Set the date string for the next holiday
+            nextHoliday.dateString = text.text.trim();
+          }
+        },
+        element() {}, // Required to avoid TypeScript errors
+        comments() {}, // Required to avoid TypeScript errors
+      })
+      .on("div.holidays__recent-holiday-name", {
+        text(text: TextChunk) {
+          if (nextHoliday && text.text.trim()) {
+            // Append to the name (since name can be split across multiple text nodes)
+            if (!nextHoliday.name) {
+              nextHoliday.name = text.text.trim();
+            } else {
+              // Add the text without adding extra spaces
+              nextHoliday.name += text.text.trim();
+            }
+          }
+        },
+        element() {}, // Required to avoid TypeScript errors
+        comments() {}, // Required to avoid TypeScript errors
+      })
+      .on("li.holidays__list-item", {
+        element(element) {
+          // Create a new holiday object when we encounter a list item
+          // Initialize with empty strings and current date as placeholder
+          currentHoliday = { dateString: "", name: "", date: new Date() };
+        },
+        comments() {}, // Required to avoid TypeScript errors
+        text() {}, // Required to avoid TypeScript errors
+      })
+      .on("span.holidays__list-item-date", {
+        text(text: TextChunk) {
+          if (currentHoliday && text.text.trim()) {
+            // Append to the date (since date can be split across multiple spans)
+            currentHoliday.dateString += text.text.trim() + " ";
+          }
+        },
+        element() {}, // Required to avoid TypeScript errors
+        comments() {}, // Required to avoid TypeScript errors
+      })
+      .on("span.holidays__list-item-name", {
+        text(text: TextChunk) {
+          if (currentHoliday && text.text.trim()) {
+            // Append to the name (since name can be split across multiple text nodes)
+            if (!currentHoliday.name) {
+              currentHoliday.name = text.text.trim();
+            } else {
+              // Add the text without adding extra spaces
+              currentHoliday.name += text.text.trim();
+            }
+          }
+        },
+        // When we've finished processing the name element, finalize the holiday
+        element(element) {
+          if (element.tagName === "span" && element.onEndTag) {
+            element.onEndTag(function () {
+              if (
+                currentHoliday &&
+                currentHoliday.dateString &&
+                currentHoliday.name
+              ) {
+                // Clean up the date format (remove trailing colon if present)
+                currentHoliday.dateString = currentHoliday.dateString
+                  .replace(/:\s*$/, "")
+                  .trim();
+
+                // Parse the date string into a Date object
+                try {
+                  const parsedDate = parseSpanishDate(
+                    currentHoliday.dateString
+                  );
+
+                  // Normalize spaces in the name (replace multiple spaces with single space)
+                  const normalizedName = currentHoliday.name
+                    .replace(/\s+/g, " ")
+                    .trim();
+
+                  holidays.push({
+                    dateString: currentHoliday.dateString,
+                    name: normalizedName,
+                    date: parsedDate,
+                  });
+                } catch (err) {
+                  console.error(
+                    `Failed to parse date: ${currentHoliday.dateString}`,
+                    err
+                  );
+                }
+              }
+            });
+          }
+        },
+      });
+
+    // Process the HTML content
+    console.log("Starting HTMLRewriter transform");
+    await rewriter.transform(response).arrayBuffer();
+
+    console.log(`Finished processing. Found ${holidays.length} holidays.`);
+    if (holidays.length > 0) {
     }
 
     return holidays;
   } catch (error) {
     console.error("Error extracting holidays:", error);
+    // Log more details about the error
+    if (error instanceof Error) {
+      console.error(`Error name: ${error.name}, message: ${error.message}`);
+      console.error(`Stack trace: ${error.stack}`);
+    }
     return [];
   }
 }
